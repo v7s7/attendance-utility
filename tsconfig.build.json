@@ -1,0 +1,14 @@
+{
+  // Compiles the server (and the shared rules) to plain JavaScript in dist/app, which `npm start` runs.
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist/app",
+    "rewriteRelativeImportExtensions": true,
+    "incremental": false,
+    "sourceMap": true
+  },
+  "include": ["src/server", "src/core"],
+  "exclude": ["src/**/*.test.ts"]
+}
