@@ -26,7 +26,11 @@ describe("resolveInOut", () => {
   it("merges double taps", () => {
     const r = resolveInOut(["09:16:11", "09:16:13", "15:29:25"], opts);
     expect([r.inTime, r.outTime]).toEqual(["09:16:11", "15:29:25"]);
-    expect(r.notes).toEqual([{ code: "duplicates", n: 1 }]);
+    // Every tap is listed so HR can see what was set aside
+    expect(r.notes).toEqual([
+      { code: "duplicates", n: 1 },
+      { code: "punches", at: "09:16 · 09:16 · 15:29" },
+    ]);
   });
 
   it("keeps the last tap of a burst at leaving time", () => {

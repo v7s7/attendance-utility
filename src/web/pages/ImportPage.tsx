@@ -1,7 +1,7 @@
 import { CalendarDays, Check, CircleCheck, FileClock, FileSpreadsheet, Trash, Upload } from "lucide-react";
 import { useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import type { ImportRecord, ImportResult } from "../../core/api.ts";
-import { firstDayOfMonth, lastDayOfMonth, localToday, monthOf, monthsBetween } from "../../core/time.ts";
+import { addDays, firstDayOfMonth, lastDayOfMonth, localToday, monthOf, monthsBetween } from "../../core/time.ts";
 import {
   cellText,
   detectLayout,
@@ -64,11 +64,14 @@ async function readSource(file: File): Promise<Source> {
 const layoutKey = ({ rows, layout }: Source) =>
   layout.headerRow < 0 ? `#${layout.columns.length}` : rows[layout.headerRow].map(cellText).join("|");
 
-/** The whole months the files fall in, up to today: days still to come are not absences. */
+/**
+ * The whole months the files fall in, up to yesterday: today and the days still to come are
+ * not absences. A file exported this morning has no punches for today yet.
+ */
 function wholeMonths(p: { from: string; to: string }): { from: string; to: string } {
   const end = lastDayOfMonth(monthOf(p.to));
-  const today = localToday();
-  return { from: firstDayOfMonth(monthOf(p.from)), to: end < today || today < p.to ? end : today };
+  const yesterday = addDays(localToday(), -1);
+  return { from: firstDayOfMonth(monthOf(p.from)), to: end <= yesterday ? end : p.to > yesterday ? p.to : yesterday };
 }
 
 export function ImportPage() {

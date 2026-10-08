@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { firstDayOfMonth, lastDayOfMonth, localToday } from "../../core/time.ts";
+import { addDays, firstDayOfMonth, lastDayOfMonth, localToday } from "../../core/time.ts";
 import type { Db } from "../db/database.ts";
 import { HttpError, notFound } from "../http.ts";
 import { DateStr, MonthStr, periodParams, TimecardRowSchema } from "../schemas.ts";
@@ -58,9 +58,10 @@ export function attendanceRoutes(app: FastifyInstance, db: Db): void {
     const user = currentUser(req);
     const month = monthParam(req.params);
     if (getLock(db, month)) throw new HttpError(409, "month_locked");
-    const today = localToday();
-    const last = lastDayOfMonth(month) < today ? lastDayOfMonth(month) : today;
-    const changed = coverWholeMonth(db, firstDayOfMonth(month), last);
+    // Up to yesterday: today is not over yet
+    const yesterday = addDays(localToday(), -1);
+    const last = lastDayOfMonth(month) < yesterday ? lastDayOfMonth(month) : yesterday;
+    const changed = last < firstDayOfMonth(month) ? 0 : coverWholeMonth(db, firstDayOfMonth(month), last);
     logAction(db, user.id, "month.cover", month, { employees: changed });
     return { employees: changed };
   });

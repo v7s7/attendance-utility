@@ -77,6 +77,8 @@ export function resolveInOut(
 
   const extra = sorted.length - bursts.length;
   if (extra > 0) notes.push({ code: "duplicates", n: extra });
+  // More than an IN and an OUT: list them all, so HR can check what was set aside
+  if (sorted.length > 2) notes.push({ code: "punches", at: sorted.map((s) => secToHms(s).slice(0, 5)).join(" · ") });
   if (bursts.length === 0) return { inTime: null, outTime: null, notes };
 
   const at = secToHms(middaySec).slice(0, 5);

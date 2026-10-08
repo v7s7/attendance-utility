@@ -74,7 +74,9 @@ export type NoteCode =
   | "multi"
   | "inAfterMidday"
   | "outBeforeMidday"
-  | "invalid";
+  | "invalid"
+  /** Every tap of the day, when there were more than an IN and an OUT. */
+  | "punches";
 
 /** An explanation of a guess made while reading punches, shown to HR. */
 export interface Note {

@@ -102,6 +102,7 @@ export const en: Dict = {
   "note.outBeforeMidday": "OUT before {at}: left early?",
   "note.invalid": "{n, plural, one {# unreadable time} other {# unreadable times}}",
   "note.manual": "Entered by HR",
+  "note.punches": "Punches: {at}",
 
   "col.name": "Name",
   "col.cpr": "CPR",

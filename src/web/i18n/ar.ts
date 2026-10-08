@@ -100,6 +100,7 @@ export const ar = {
   "note.outBeforeMidday": "الانصراف قبل {at}: خروج مبكر؟",
   "note.invalid": "{n, plural, one {وقت غير مقروء} two {وقتان غير مقروءين} few {# أوقات غير مقروءة} many {# وقتاً غير مقروء} other {# وقت غير مقروء}}",
   "note.manual": "أدخلته الموارد البشرية",
+  "note.punches": "البصمات: {at}",
 
   "col.name": "الاسم",
   "col.cpr": "الرقم الشخصي",
