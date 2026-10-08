@@ -299,6 +299,57 @@ describe("attendance", () => {
     expect(res.rawPayload.subarray(0, 15).toString()).toBe("SQLite format 3");
   });
 
+  it("lets HR delete a wrong import: its punches and the employees only it added go", async () => {
+    await call("POST", "/api/users", { username: "hr1", displayName: "HR One", password: "hr-password", role: "hr" });
+    await call("POST", "/api/auth/logout");
+    await call("POST", "/api/auth/login", { username: "hr1", password: "hr-password" });
+
+    // A file read wrongly: the name was taken as the ID
+    const wrong = rows.map((r) => ({ ...r, employeeId: "SAMPLE" }));
+    const bad = (await call("POST", "/api/imports", { fileName: "Wrong.csv", from: "2026-09-13", to: "2026-09-15", rows: wrong })).body;
+    await importSeptember();
+    expect((await call("GET", "/api/employees")).body).toHaveLength(2);
+
+    expect((await call("DELETE", `/api/imports/${bad.importId}`)).body).toEqual({ punchesRemoved: 5, employeesRemoved: 1 });
+    expect((await call("GET", "/api/employees")).body.map((e: { id: string }) => e.id)).toEqual(["010101010"]);
+    expect((await call("GET", "/api/imports")).body.map((i: { fileName: string }) => i.fileName)).toEqual(["Time Card.csv"]);
+    expect((await call("GET", "/api/months/2026-09")).body.rows[0].summary).toMatchObject({ lateMin: 30, earlyMin: 15 });
+    expect((await call("DELETE", `/api/imports/${bad.importId}`)).status).toBe(404);
+  });
+
+  it("keeps the punches another import also had, HR's records and the employees HR filled in", async () => {
+    const first = (await importSeptember()).body;
+    const longer = [...rows, { ...rows[1], date: "2026-09-16" }];
+    await call("POST", "/api/imports", { fileName: "Again.csv", from: "2026-09-13", to: "2026-09-16", rows: longer });
+    await call("PATCH", "/api/employees/010101010", { fullName: "Test Employee" });
+    await call("PUT", "/api/employees/010101010/days/2026-09-02", { inTime: null, outTime: null, excuse: "sick", note: "" });
+
+    expect((await call("DELETE", `/api/imports/${first.importId}`)).body).toEqual({ punchesRemoved: 0, employeesRemoved: 0 });
+    const report = (await call("GET", "/api/months/2026-09/employees/010101010")).body;
+    const day = (date: string) => report.days.find((d: { date: string }) => d.date === date);
+    expect([day("2026-09-13").inTime, day("2026-09-16").inTime, day("2026-09-02").excuse]).toEqual(["08:30:00", "07:00:00", "sick"]);
+
+    // The last import goes too: the punches go, the employee HR named stays
+    const [last] = (await call("GET", "/api/imports")).body;
+    expect((await call("DELETE", `/api/imports/${last.id}`)).body).toEqual({ punchesRemoved: 7, employeesRemoved: 0 });
+    expect((await call("GET", "/api/employees")).body[0].name).toBe("Test Employee");
+  });
+
+  it("doesn't delete an import in an approved month", async () => {
+    const { importId } = (await importSeptember()).body;
+    await call("POST", "/api/months/2026-09/lock");
+    const res = await call("DELETE", `/api/imports/${importId}`);
+    expect([res.status, res.body.error]).toEqual([409, "month_locked"]);
+  });
+
+  it("matches an ID that lost its leading zero in Excel to the employee already known", async () => {
+    await importSeptember();
+    const excel = [{ ...rows[0], employeeId: "10101010", date: "2026-09-16" }];
+    const res = await call("POST", "/api/imports", { fileName: "Saved by Excel.csv", from: "2026-09-16", to: "2026-09-16", rows: excel });
+    expect(res.body).toMatchObject({ employees: 1, newEmployees: 0, punchesAdded: 2 });
+    expect((await call("GET", "/api/employees")).body.map((e: { id: string }) => e.id)).toEqual(["010101010"]);
+  });
+
   it("records who changed what", async () => {
     await importSeptember();
     const audit = await call("GET", "/api/audit");

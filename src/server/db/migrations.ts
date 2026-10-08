@@ -148,6 +148,28 @@ const MIGRATIONS: ((db: Db) => void)[] = [
   (db) => {
     db.exec("ALTER TABLE adjustments ADD COLUMN absence TEXT");
   },
+
+  // Every punch each import had, including ones already there, so deleting an import keeps
+  // the punches another import also had; and the import each unreadable time came from
+  (db) => {
+    db.exec(`
+      CREATE TABLE import_punches (
+        import_id   INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+        employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        date        TEXT NOT NULL,
+        time        TEXT NOT NULL,
+        PRIMARY KEY (import_id, employee_id, date, time)
+      ) WITHOUT ROWID;
+      CREATE INDEX import_punches_punch ON import_punches(employee_id, date, time);
+      INSERT INTO import_punches SELECT import_id, employee_id, date, time FROM punches WHERE import_id IS NOT NULL;
+
+      ALTER TABLE punch_issues ADD COLUMN import_id INTEGER REFERENCES imports(id) ON DELETE CASCADE;
+      UPDATE punch_issues SET import_id = (
+        SELECT MIN(c.import_id) FROM coverage c
+         WHERE c.employee_id = punch_issues.employee_id AND punch_issues.date BETWEEN c.date_from AND c.date_to
+      );
+    `);
+  },
 ];
 
 export function migrate(db: Db): void {

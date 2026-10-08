@@ -38,17 +38,27 @@ export async function downloadEmployeeSheet(employees: EmployeeView[], schedules
   ]).toFile(`${t("sheet.fileName")}.xlsx`);
 }
 
+/** CSV text: UTF-8 as BioTime writes it, or the Arabic Windows encoding Excel saves in. */
+async function csvText(file: File): Promise<string> {
+  const bytes = await file.arrayBuffer();
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("windows-1256").decode(bytes);
+  }
+}
+
+/** The sheets of an uploaded .xlsx, or the one table of a .csv, as rows of cells. */
+export async function readSpreadsheet(file: File): Promise<SheetCell[][][]> {
+  if (file.name.toLowerCase().endsWith(".csv")) {
+    return [Papa.parse<SheetCell[]>(await csvText(file), { skipEmptyLines: true }).data];
+  }
+  return (await readXlsxFile(file)).map((s) => s.data as SheetCell[][]);
+}
+
 /** Read an uploaded .xlsx or .csv and match it to the employees; the first sheet with a CPR column is used. */
 export async function readUploadedSheet(file: File, employees: EmployeeView[], schedules: Schedule[]): Promise<SheetResult> {
-  let sheets: SheetCell[][][];
-  if (file.name.toLowerCase().endsWith(".csv")) {
-    const rows = await new Promise<SheetCell[][]>((resolve, reject) =>
-      Papa.parse<SheetCell[]>(file, { skipEmptyLines: true, complete: (res) => resolve(res.data), error: reject }),
-    );
-    sheets = [rows];
-  } else {
-    sheets = (await readXlsxFile(file)).map((s) => s.data as SheetCell[][]);
-  }
+  const sheets = await readSpreadsheet(file);
   let result: SheetResult = { ok: false, error: "no_header" };
   for (const rows of sheets) {
     result = readEmployeeSheet(rows, employees, schedules);

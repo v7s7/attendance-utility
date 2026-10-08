@@ -4,7 +4,7 @@ import { firstDayOfMonth, lastDayOfMonth, localToday } from "../../core/time.ts"
 import type { Db } from "../db/database.ts";
 import { HttpError, notFound } from "../http.ts";
 import { DateStr, MonthStr, periodParams, TimecardRowSchema } from "../schemas.ts";
-import { importTimecard } from "../services/imports.ts";
+import { deleteImport, importTimecard } from "../services/imports.ts";
 import { employeeMonthReport, freezeMonth, listMonths, monthOverview, monthReview, periodOverview } from "../services/reports.ts";
 import { coverWholeMonth, listImports } from "../store/attendance.ts";
 import { listAudit, logAction } from "../store/audit.ts";
@@ -27,6 +27,13 @@ export function attendanceRoutes(app: FastifyInstance, db: Db): void {
       })
       .parse(req.body);
     return importTimecard(db, user.id, body);
+  });
+
+  // HR undoes a file that was read wrongly, then imports it again
+  app.delete("/imports/:id", async (req) => {
+    const user = currentUser(req);
+    const id = z.coerce.number().int().positive().parse((req.params as { id: string }).id);
+    return deleteImport(db, user.id, id);
   });
 
   app.get("/months", async () => listMonths(db));

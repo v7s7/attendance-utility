@@ -25,17 +25,25 @@ export function parseTime(text: string): number | null {
   return h * 3600 + min * 60 + sec;
 }
 
-/** A Time cell like "06:54:33;14:01:18" -> normalised "HH:MM:SS" times, plus anything unreadable. */
+// A time inside a cell: "06:54:33", "2:01 PM", "2:01 p.m." or "2:01 م"
+const TIME_IN_TEXT = /(?<![\d:.])\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:[AaPp]\.?[Mm]\.?|ص|م)(?![\p{L}]))?(?![\d:])/gu;
+
+/**
+ * A Time cell like "06:54:33;14:01:18" (or times split by spaces, commas or new lines) ->
+ * normalised "HH:MM:SS" times, plus anything unreadable. Separators alone are ignored.
+ */
 export function parsePunchCell(cell: string | null | undefined): { times: string[]; invalid: string[] } {
   const times: string[] = [];
   const invalid: string[] = [];
+  const text = String(cell ?? "");
 
-  for (const part of String(cell ?? "").split(/[;,|\n]/)) {
-    const s = part.trim();
-    if (!s) continue;
-    const sec = parseTime(s);
-    if (sec === null) invalid.push(s);
+  for (const [match] of text.matchAll(TIME_IN_TEXT)) {
+    const sec = parseTime(match.replace(/\./g, "").replace("ص", "AM").replace("م", "PM"));
+    if (sec === null) invalid.push(match.trim());
     else times.push(secToHms(sec));
+  }
+  for (const rest of text.replace(TIME_IN_TEXT, " ").split(/[\s;,|]+/)) {
+    if (/[\p{L}\p{N}]/u.test(rest)) invalid.push(rest);
   }
   return { times, invalid };
 }

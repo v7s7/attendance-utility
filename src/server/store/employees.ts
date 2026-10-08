@@ -87,5 +87,49 @@ export function upsertFromImport(db: Db, e: { id: string; name: string; departme
   return "existing";
 }
 
+/** An all-digit ID without its leading zeros; "" for other IDs. */
+const digitsKey = (id: string) => (/^\d+$/.test(id) ? id.replace(/^0+/, "") : "");
+
+/**
+ * Excel drops the leading zero of IDs it saves as numbers: 010101010 becomes 10101010. For
+ * each ID in a file written another way than the employee the app knows, the known ID.
+ */
+export function matchEmployeeIds(db: Db, ids: string[]): Map<string, string> {
+  const known = all<{ id: string }>(db, "SELECT id FROM employees").map((r) => r.id);
+  const exact = new Set(known);
+  const byDigits = new Map<string, string | null>();
+  for (const id of known) {
+    const key = digitsKey(id);
+    if (key) byDigits.set(key, byDigits.has(key) ? null : id); // null: two employees share it, so no guessing
+  }
+
+  const out = new Map<string, string>();
+  for (const id of new Set(ids)) {
+    const key = digitsKey(id);
+    if (exact.has(id) || !key) continue;
+    const match = byDigits.get(key);
+    if (match) out.set(id, match);
+    else if (match === undefined) byDigits.set(key, id); // the same person written both ways in one file
+  }
+  return out;
+}
+
+/** Remove employees that no longer have any attendance, HR record or detail HR typed. Returns how many went. */
+export function removeUnusedEmployees(db: Db, ids: string[]): number {
+  let removed = 0;
+  for (const id of ids) {
+    removed += run(
+      db,
+      `DELETE FROM employees
+        WHERE id = ? AND full_name = '' AND employee_no = '' AND schedule_id IS NULL AND wage = '{}'
+          AND NOT EXISTS (SELECT 1 FROM coverage WHERE employee_id = employees.id)
+          AND NOT EXISTS (SELECT 1 FROM punches WHERE employee_id = employees.id)
+          AND NOT EXISTS (SELECT 1 FROM adjustments WHERE employee_id = employees.id)`,
+      id,
+    ).changes;
+  }
+  return removed;
+}
+
 /** The name to show: the full name HR typed, else the exported name. */
 export const displayName = (e: Pick<Employee, "fullName" | "name">) => e.fullName || e.name;

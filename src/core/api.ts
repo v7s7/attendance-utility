@@ -158,6 +158,12 @@ export interface ImportResult {
   unreadable: number;
 }
 
+export interface ImportDeleted {
+  punchesRemoved: number;
+  /** Employees only this import had added. */
+  employeesRemoved: number;
+}
+
 export interface AuditEntry {
   id: number;
   at: string;

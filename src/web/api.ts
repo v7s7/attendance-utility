@@ -5,6 +5,7 @@ import type {
   EmployeePeriodReport,
   EmployeeUpdate,
   EmployeeView,
+  ImportDeleted,
   ImportRecord,
   ImportResult,
   MonthListItem,
@@ -95,6 +96,7 @@ export const api = {
   imports: () => request<ImportRecord[]>("GET", "/imports"),
   importTimecard: (body: { fileName: string; from: string; to: string; rows: TimecardRow[] }) =>
     request<ImportResult>("POST", "/imports", body),
+  deleteImport: (id: number) => request<ImportDeleted>("DELETE", `/imports/${id}`),
 
   months: () => request<MonthListItem[]>("GET", "/months"),
   month: (month: string) => request<MonthOverview>("GET", `/months/${month}`),

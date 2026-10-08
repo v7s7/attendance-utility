@@ -1,4 +1,5 @@
 import type { ImportRecord } from "../../core/api.ts";
+import { monthsBetween } from "../../core/time.ts";
 import type { AbsenceDecision, Adjustment, DateRange, Excuse } from "../../core/types.ts";
 import { all, one, run, type Db } from "../db/database.ts";
 
@@ -41,14 +42,57 @@ export function addCoverage(db: Db, importId: number, employeeId: string, range:
 
 /** Returns true when the punch is new. */
 export function addPunch(db: Db, employeeId: string, date: string, time: string, importId: number): boolean {
+  run(db, "INSERT OR IGNORE INTO import_punches (import_id, employee_id, date, time) VALUES (?, ?, ?, ?)", importId, employeeId, date, time);
   return (
     run(db, "INSERT OR IGNORE INTO punches (employee_id, date, time, import_id) VALUES (?, ?, ?, ?)", employeeId, date, time, importId)
       .changes > 0
   );
 }
 
-export function addPunchIssue(db: Db, employeeId: string, date: string, raw: string): void {
-  run(db, "INSERT OR IGNORE INTO punch_issues (employee_id, date, raw) VALUES (?, ?, ?)", employeeId, date, raw);
+export function addPunchIssue(db: Db, employeeId: string, date: string, raw: string, importId: number): void {
+  run(db, "INSERT OR IGNORE INTO punch_issues (employee_id, date, raw, import_id) VALUES (?, ?, ?, ?)", employeeId, date, raw, importId);
+}
+
+export interface ImportInfo {
+  fileName: string;
+  /** Every month the import touches: its period and the dates of its punches. */
+  months: string[];
+}
+
+export function getImport(db: Db, importId: number): ImportInfo | null {
+  const row = one<{ fileName: string; dateFrom: string; dateTo: string }>(
+    db,
+    "SELECT file_name AS fileName, date_from AS dateFrom, date_to AS dateTo FROM imports WHERE id = ?",
+    importId,
+  );
+  if (!row) return null;
+  const months = new Set(monthsBetween(row.dateFrom, row.dateTo));
+  for (const r of all<{ month: string }>(db, "SELECT DISTINCT substr(date, 1, 7) AS month FROM import_punches WHERE import_id = ?", importId)) {
+    months.add(r.month);
+  }
+  return { fileName: row.fileName, months: [...months].sort() };
+}
+
+/**
+ * Remove an import: its period, its unreadable times and the punches only it had. A punch
+ * another import also had stays, credited to that import. Returns the employees it covered
+ * and how many punches went.
+ */
+export function deleteImportData(db: Db, importId: number): { employeeIds: string[]; punchesRemoved: number } {
+  const employeeIds = all<{ id: string }>(
+    db,
+    "SELECT employee_id AS id FROM coverage WHERE import_id = ? UNION SELECT employee_id FROM import_punches WHERE import_id = ?",
+    importId,
+    importId,
+  ).map((r) => r.id);
+
+  const otherSource = `FROM import_punches s WHERE s.import_id <> ? AND s.employee_id = punches.employee_id
+                          AND s.date = punches.date AND s.time = punches.time`;
+  const punchesRemoved = run(db, `DELETE FROM punches WHERE import_id = ? AND NOT EXISTS (SELECT 1 ${otherSource})`, importId, importId).changes;
+  run(db, `UPDATE punches SET import_id = (SELECT MIN(s.import_id) ${otherSource}) WHERE import_id = ?`, importId, importId);
+  // Its coverage, punch list and unreadable times go with it
+  run(db, "DELETE FROM imports WHERE id = ?", importId);
+  return { employeeIds, punchesRemoved };
 }
 
 export function coverageFor(db: Db, employeeId: string, from: string, to: string): DateRange[] {

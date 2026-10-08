@@ -1,17 +1,19 @@
-import type { ImportResult } from "../../core/api.ts";
+import type { ImportDeleted, ImportResult } from "../../core/api.ts";
 import { monthOf, monthsBetween } from "../../core/time.ts";
 import { summarizeTimecard, type TimecardRow } from "../../core/timecard.ts";
 import { transaction, type Db } from "../db/database.ts";
-import { HttpError } from "../http.ts";
+import { HttpError, notFound } from "../http.ts";
 import {
   addCoverage,
   addPunch,
   addPunchIssue,
   createImport,
+  deleteImportData,
+  getImport,
   setImportPunchesAdded,
 } from "../store/attendance.ts";
 import { logAction } from "../store/audit.ts";
-import { upsertFromImport } from "../store/employees.ts";
+import { matchEmployeeIds, removeUnusedEmployees, upsertFromImport } from "../store/employees.ts";
 import { isLocked } from "../store/locks.ts";
 
 export interface ImportPayload {
@@ -22,15 +24,21 @@ export interface ImportPayload {
   rows: TimecardRow[];
 }
 
+function assertUnlocked(db: Db, months: Iterable<string>): void {
+  const locked = [...months].filter((m) => isLocked(db, m));
+  if (locked.length) throw new HttpError(409, "month_locked", locked.join(", "));
+}
+
 export function importTimecard(db: Db, userId: number, payload: ImportPayload): ImportResult {
-  const { fileName, from, to, rows } = payload;
+  const { fileName, from, to } = payload;
   if (from > to) throw new HttpError(400, "invalid_period");
 
   const months = new Set(monthsBetween(from, to));
-  for (const r of rows) months.add(monthOf(r.date));
-  const locked = [...months].filter((m) => isLocked(db, m));
-  if (locked.length) throw new HttpError(409, "month_locked", locked.join(", "));
+  for (const r of payload.rows) months.add(monthOf(r.date));
+  assertUnlocked(db, months);
 
+  const known = matchEmployeeIds(db, payload.rows.map((r) => r.employeeId));
+  const rows = payload.rows.map((r) => ({ ...r, employeeId: known.get(r.employeeId) ?? r.employeeId }));
   const employees = summarizeTimecard(rows);
 
   return transaction(db, () => {
@@ -51,7 +59,7 @@ export function importTimecard(db: Db, userId: number, payload: ImportPayload): 
         else punchesExisting++;
       }
       for (const raw of r.invalid) {
-        addPunchIssue(db, r.employeeId, r.date, raw);
+        addPunchIssue(db, r.employeeId, r.date, raw, importId);
         unreadable++;
       }
     }
@@ -59,6 +67,24 @@ export function importTimecard(db: Db, userId: number, payload: ImportPayload): 
 
     const result = { importId, employees: employees.length, newEmployees, punchesAdded, punchesExisting, unreadable };
     logAction(db, userId, "import.create", fileName, { from, to, ...result });
+    return result;
+  });
+}
+
+/**
+ * Undo an import that was wrong: its punches, its period and the employees only it added go.
+ * HR's records (excuses, leave, typed times) stay. Not in an approved month.
+ */
+export function deleteImport(db: Db, userId: number, importId: number): ImportDeleted {
+  const record = getImport(db, importId);
+  if (!record) throw notFound("import_not_found");
+  assertUnlocked(db, record.months);
+
+  return transaction(db, () => {
+    const { employeeIds, punchesRemoved } = deleteImportData(db, importId);
+    const employeesRemoved = removeUnusedEmployees(db, employeeIds);
+    const result = { punchesRemoved, employeesRemoved };
+    logAction(db, userId, "import.delete", record.fileName, { importId, ...result });
     return result;
   });
 }

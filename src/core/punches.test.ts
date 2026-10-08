@@ -10,6 +10,11 @@ describe("parsePunchCell", () => {
       invalid: ["7:5", "ab"],
     });
   });
+
+  it("reads times split by spaces or new lines, and Arabic AM/PM", () => {
+    expect(parsePunchCell("06:54 2:01 م\n7:00 ص")).toEqual({ times: ["06:54:00", "14:01:00", "07:00:00"], invalid: [] });
+    expect(parsePunchCell(" - ")).toEqual({ times: [], invalid: [] });
+  });
 });
 
 describe("resolveInOut", () => {
