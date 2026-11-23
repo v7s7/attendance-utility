@@ -6,8 +6,8 @@ import { employeeSheetData, readEmployeeSheet, type SheetCell } from "./employee
 import type { Schedule } from "./types.ts";
 
 const schedules: Schedule[] = [
-  { id: 1, name: "دوام مرن", kind: "flexible", start: "07:00", latestStart: "08:00", hours: [] },
-  { id: 3, name: "ساعات العمل فقط", kind: "hours", start: "07:00", latestStart: "07:00", hours: [] },
+  { id: 1, name: "دوام ثابت", kind: "fixed", start: "07:00", latestStart: "08:00", hours: [] },
+  { id: 3, name: "دوام مرن", kind: "hours", start: "07:00", latestStart: "07:00", hours: [] },
 ];
 
 function employee(id: string, more: Partial<EmployeeView> = {}): EmployeeView {
@@ -20,7 +20,7 @@ function employee(id: string, more: Partial<EmployeeView> = {}): EmployeeView {
     department: "IT",
     scheduleChoice: null,
     scheduleId: 1,
-    scheduleName: "دوام مرن",
+    scheduleName: "دوام ثابت",
     wage: {},
     rate: null,
     active: true,
@@ -36,7 +36,7 @@ describe("readEmployeeSheet", () => {
       [
         header,
         // Excel turned the CPR into a number and dropped the leading zero
-        [10101010, "SAMPLE", "موظف تجريبي", 1234, "", "ساعات العمل فقط", "الوظائف العمومية (الاعتيادية)", 5, 3, null],
+        [10101010, "SAMPLE", "موظف تجريبي", 1234, "", "دوام مرن", "الوظائف العمومية (الاعتيادية)", 5, 3, null],
         ["020202020", "SARA", "", "", "", "", "", "", "", "3.5"],
         ["030303030", "ALI", "", "", "", "", "", "", "", ""],
       ],
@@ -89,7 +89,7 @@ describe("readEmployeeSheet", () => {
 
   it("reads back the sheet it gives out without changing anything", async () => {
     const employees = [
-      employee("010101010", { fullName: "موظف تجريبي", scheduleChoice: 3, scheduleName: "ساعات العمل فقط", wage: { mode: "table", scale: "general", grade: 5, step: 0 } }),
+      employee("010101010", { fullName: "موظف تجريبي", scheduleChoice: 3, scheduleName: "دوام مرن", wage: { mode: "table", scale: "general", grade: 5, step: 0 } }),
       employee("020202020", { wage: { mode: "custom", rate: 3.25 } }),
       employee("030303030"),
     ];

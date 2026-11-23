@@ -1,16 +1,21 @@
 // Shared types for the rules engine, the API and the web app.
 
-/** How a schedule decides lateness and which hours count. */
-export type ScheduleKind = "flexible" | "fixed" | "hours";
+/**
+ * How a schedule decides lateness and which hours count: "fixed" («دوام ثابت») counts each
+ * person's own day from arrival with no extra time; "hours" («دوام مرن») counts all the time
+ * worked, overtime too. Approved months saved before November 2026 may still say "flexible",
+ * which is read as "fixed".
+ */
+export type ScheduleKind = "fixed" | "hours";
 
 /** A work schedule that HR assigns to employees. */
 export interface Schedule {
   id: number;
   name: string;
   kind: ScheduleKind;
-  /** flexible / fixed: counting starts here. hours: the usual start, only used to read a lone punch. */
+  /** fixed: counting starts here. hours: the usual start, only used to read a lone punch. */
   start: string;
-  /** flexible: arriving after this is late. Not used by the other kinds. */
+  /** fixed: arriving after this is late. Not used by hours. */
   latestStart: string;
   /** Required hours per weekday, Sunday first, as "HH:MM"; null means a day off. */
   hours: (string | null)[];

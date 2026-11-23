@@ -170,6 +170,31 @@ const MIGRATIONS: ((db: Db) => void)[] = [
       );
     `);
   },
+
+  // Two kinds of schedule (HR, November 2026). «دوام ثابت», the default: arrive 07:00-08:00
+  // and leave once the hours are done, with no extra time. «دوام مرن»: all the time worked
+  // counts. The flexible kind becomes fixed; the three set-up schedules become these two.
+  (db) => {
+    const find = (name: string, kind: string) =>
+      db.prepare("SELECT id FROM schedules WHERE name = ? AND kind = ?").get(name, kind) as { id: number } | undefined;
+    const flexible = find("دوام مرن", "flexible");
+    const fixed = find("دوام ثابت", "fixed");
+    const hours = find("ساعات العمل فقط", "hours");
+
+    db.exec("UPDATE schedules SET kind = 'fixed' WHERE kind = 'flexible'");
+    if (flexible) {
+      if (fixed) {
+        // The old fixed schedule (07:00 sharp) joins the 07:00-08:00 one, which takes its name
+        db.prepare("UPDATE employees SET schedule_id = ? WHERE schedule_id = ?").run(flexible.id, fixed.id);
+        db.prepare("UPDATE settings SET value = ? WHERE key = 'defaultScheduleId' AND value = ?").run(String(flexible.id), String(fixed.id));
+        db.prepare("DELETE FROM schedules WHERE id = ?").run(fixed.id);
+      }
+      db.prepare("UPDATE schedules SET name = 'دوام ثابت' WHERE id = ?").run(flexible.id);
+    } else if (fixed) {
+      db.prepare("UPDATE schedules SET latest_start = '08:00' WHERE id = ? AND start = '07:00' AND latest_start = '07:00'").run(fixed.id);
+    }
+    if (hours) db.prepare("UPDATE schedules SET name = 'دوام مرن' WHERE id = ?").run(hours.id);
+  },
 ];
 
 export function migrate(db: Db): void {

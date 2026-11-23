@@ -3,7 +3,7 @@ import { buildEmployeeMonth, type EmployeeMonthInput } from "./report.ts";
 import { DEFAULT_RULES, DEFAULT_SCHEDULES, dayRule, measureDay } from "./schedule.ts";
 import type { Schedule } from "./types.ts";
 
-const [FLEXIBLE, FIXED, HOURS] = DEFAULT_SCHEDULES.map((s, i): Schedule => ({ ...s, id: i + 1 }));
+const [FIXED, FLEXIBLE] = DEFAULT_SCHEDULES.map((s, i): Schedule => ({ ...s, id: i + 1 }));
 
 // Deduct from the first minute, so the small examples below show their numbers
 const NO_ALLOWANCE = { ...DEFAULT_RULES, allowanceHours: 0 };
@@ -13,7 +13,7 @@ function month(over: Partial<EmployeeMonthInput> = {}): EmployeeMonthInput {
   return {
     month: "2026-09",
     today: "2026-10-04",
-    schedule: FLEXIBLE,
+    schedule: FIXED,
     rules: NO_ALLOWANCE,
     holidays: [],
     coverage: [{ from: "2026-09-01", to: "2026-09-30" }],
@@ -31,13 +31,22 @@ const day = (input: EmployeeMonthInput, date: string) => {
   return found;
 };
 
-describe("flexible schedule (07:00, late after 08:00)", () => {
-  const sun = dayRule(FLEXIBLE, "2026-09-13")!;
-  const thu = dayRule(FLEXIBLE, "2026-09-17")!;
+describe("«دوام ثابت»: arrive 07:00-08:00, leave once the hours are done", () => {
+  const sun = dayRule(FIXED, "2026-09-13")!;
+  const thu = dayRule(FIXED, "2026-09-17")!;
 
-  it("counts 07:00 to 15:15 on Sunday and 07:00 to 15:00 on Thursday", () => {
+  it("is 07:00 to 14:15 up to 08:00 to 15:15, and an hour on Thursday 15 minutes shorter", () => {
     expect([sun.start, sun.latestStart, sun.end, sun.required]).toEqual([420, 480, 915, 435]);
     expect([thu.end, thu.required]).toEqual([900, 420]);
+    expect(measureDay("07:00", "14:15", sun)).toMatchObject({ workedMin: 435, diffMin: 0, lateMin: 0, earlyMin: 0 });
+    expect(measureDay("08:00", "15:15", sun)).toMatchObject({ diffMin: 0, lateMin: 0, earlyMin: 0 });
+    expect(measureDay("07:00", "14:00", thu)).toMatchObject({ diffMin: 0, earlyMin: 0 });
+    expect(measureDay("08:00", "15:00", thu)).toMatchObject({ diffMin: 0, earlyMin: 0 });
+  });
+
+  it("ends each person's day the required hours after they came: 07:13 leaves at 14:28", () => {
+    expect(measureDay("07:13", "14:28", sun)).toMatchObject({ workedMin: 435, earlyMin: 0 });
+    expect(measureDay("07:13", "14:20", sun)).toMatchObject({ workedMin: 427, lateMin: 0, earlyMin: 8 });
   });
 
   it("splits a shortage into late arrival and early leave", () => {
@@ -49,32 +58,45 @@ describe("flexible schedule (07:00, late after 08:00)", () => {
     expect(measureDay("09:00", "17:00", sun)).toMatchObject({ workedMin: 375, lateMin: 60, earlyMin: 0 });
   });
 
-  it("ignores time before 07:00 and shows time above the required hours", () => {
-    expect(measureDay("06:30", "15:45", sun)).toMatchObject({ workedMin: 495, diffMin: 60, lateMin: 0 });
+  it("counts no time before 07:00 and no extra time after the day is done", () => {
+    expect(measureDay("06:30", "15:45", sun)).toMatchObject({ workedMin: 435, diffMin: 0 });
+    expect(measureDay("06:54", "14:19", sun)).toMatchObject({ workedMin: 435, diffMin: 0 });
+    expect(measureDay("06:54", "14:10", sun)).toMatchObject({ workedMin: 430, earlyMin: 5 });
+  });
+
+  it("counts HR's November 2026 example as they expect: never above the hours, late only after 08:00", () => {
+    // [date, in, out, worked, late]; nobody left early
+    const days: [string, string, string, number, number][] = [
+      ["2026-11-01", "08:04", "15:27", 431, 4],
+      ["2026-11-02", "07:40", "15:17", 435, 0],
+      ["2026-11-05", "07:54", "15:12", 420, 0], // Thursday
+      ["2026-11-12", "09:39", "15:24", 321, 99], // Thursday: 08:00 + 7:00 is 15:00
+      ["2026-11-16", "06:54", "14:19", 435, 0],
+      ["2026-11-19", "08:04", "19:15", 416, 4], // Thursday
+      ["2026-11-22", "07:03", "15:50", 435, 0],
+    ];
+    for (const [date, inTime, outTime, workedMin, lateMin] of days) {
+      const rule = dayRule(FIXED, date)!;
+      expect([date, measureDay(inTime, outTime, rule)]).toMatchObject([date, { workedMin, lateMin, earlyMin: 0, diffMin: workedMin - rule.required }]);
+    }
   });
 });
 
-describe("fixed schedule (07:00-14:15)", () => {
-  const sun = dayRule(FIXED, "2026-09-13")!;
-
-  it("is late from 07:00 and early before 14:15", () => {
-    expect([sun.latestStart, sun.end]).toEqual([420, 855]);
-    expect(measureDay("07:10", "14:15", sun)).toMatchObject({ lateMin: 10, earlyMin: 0 });
-    expect(measureDay("06:29", "14:12", sun)).toMatchObject({ lateMin: 0, earlyMin: 3 });
-  });
-});
-
-describe("hours-only schedule", () => {
-  it("lets someone who comes at 6:00 leave at 13:15, which the flexible schedule would not", () => {
+describe("«دوام مرن»: all the time worked counts", () => {
+  it("lets someone who comes at 6:00 leave at 13:15, which «دوام ثابت» would not", () => {
     const punches = { "2026-09-13": ["06:00:00", "13:15:00"] };
-    const hoursDay = day(month({ schedule: HOURS, punches }), "2026-09-13");
-    expect([hoursDay.status, hoursDay.workedMin, hoursDay.shortfallMin]).toEqual(["OK", 435, 0]);
-    // The flexible schedule counts from 07:00, so the same day is an hour short
     const flexDay = day(month({ schedule: FLEXIBLE, punches }), "2026-09-13");
-    expect([flexDay.status, flexDay.workedMin, flexDay.earlyMin]).toEqual(["SHORT", 375, 60]);
+    expect([flexDay.status, flexDay.workedMin, flexDay.shortfallMin]).toEqual(["OK", 435, 0]);
+    // «دوام ثابت» counts from 07:00, so the same day is an hour short
+    const fixedDay = day(month({ schedule: FIXED, punches }), "2026-09-13");
+    expect([fixedDay.status, fixedDay.workedMin, fixedDay.earlyMin]).toEqual(["SHORT", 375, 60]);
   });
 
-  const sun = dayRule(HOURS, "2026-09-13")!;
+  it("shows the time above the required hours", () => {
+    expect(measureDay("07:55", "17:21", dayRule(FLEXIBLE, "2026-11-17")!)).toMatchObject({ workedMin: 566, diffMin: 131 });
+  });
+
+  const sun = dayRule(FLEXIBLE, "2026-09-13")!;
 
   it("counts the actual time from IN to OUT, including before 07:00", () => {
     expect(measureDay("06:00", "13:15", sun)).toMatchObject({ workedMin: 435, shortfallMin: 0, lateMin: 0 });
@@ -82,7 +104,7 @@ describe("hours-only schedule", () => {
   });
 
   it("deducts the shortfall", () => {
-    const m = buildEmployeeMonth(month({ schedule: HOURS, punches: { "2026-09-13": ["09:00:00", "15:00:00"] } }));
+    const m = buildEmployeeMonth(month({ schedule: FLEXIBLE, punches: { "2026-09-13": ["09:00:00", "15:00:00"] } }));
     expect(m.summary.deductibleMin).toBe(75);
   });
 });

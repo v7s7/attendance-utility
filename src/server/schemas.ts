@@ -44,7 +44,7 @@ export const RulesSchema = z.object({
 
 export const ScheduleSchema = z.object({
   name: z.string().trim().min(1).max(60),
-  kind: z.enum(["flexible", "fixed", "hours"]),
+  kind: z.enum(["fixed", "hours"]),
   start: TimeStr,
   latestStart: TimeStr,
   hours: z.array(DurationStr.nullable()).length(7),

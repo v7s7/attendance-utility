@@ -6,10 +6,11 @@ import type { Rules, Schedule, ScheduleKind } from "./types.ts";
 //                   Sun      Mon      Tue      Wed      Thu      Fri   Sat
 const CSB_HOURS = ["07:15", "07:15", "07:15", "07:15", "07:00", null, null];
 
+// «دوام ثابت», the default: arrive 07:00-08:00, leave once the day's hours are done.
+// «دوام مرن»: all the time from the first punch to the last counts, overtime too.
 export const DEFAULT_SCHEDULES: Omit<Schedule, "id">[] = [
-  { name: "دوام مرن", kind: "flexible", start: "07:00", latestStart: "08:00", hours: CSB_HOURS },
-  { name: "دوام ثابت", kind: "fixed", start: "07:00", latestStart: "07:00", hours: CSB_HOURS },
-  { name: "ساعات العمل فقط", kind: "hours", start: "07:00", latestStart: "07:00", hours: CSB_HOURS },
+  { name: "دوام ثابت", kind: "fixed", start: "07:00", latestStart: "08:00", hours: CSB_HOURS },
+  { name: "دوام مرن", kind: "hours", start: "07:00", latestStart: "07:00", hours: CSB_HOURS },
 ];
 
 export const DEFAULT_RULES: Rules = {
@@ -27,11 +28,11 @@ export const DEFAULT_RULES: Rules = {
 export interface DayRule {
   kind: ScheduleKind;
   required: number;
-  /** Counting starts here (flexible / fixed). */
+  /** Counting starts here (fixed). */
   start: number;
-  /** Arriving after this is late (flexible / fixed). */
+  /** Arriving after this is late (fixed). */
   latestStart: number;
-  /** Counting stops here (flexible / fixed). */
+  /** The latest end of the day: someone who starts at latestStart (fixed). */
   end: number;
   /** A lone punch before this is read as IN. */
   midday: number;
@@ -47,10 +48,9 @@ export function dayRule(schedule: Schedule, date: string): DayRule | null {
     return { kind: "hours", required, start, latestStart: start, end: 24 * 60, midday: start + required / 2 };
   }
 
-  const latestStart =
-    schedule.kind === "fixed" ? start : Math.max(start, hmToMin(schedule.latestStart) ?? start);
+  const latestStart = Math.max(start, hmToMin(schedule.latestStart) ?? start);
   const end = latestStart + required;
-  return { kind: schedule.kind, required, start, latestStart, end, midday: (start + end) / 2 };
+  return { kind: "fixed", required, start, latestStart, end, midday: (start + end) / 2 };
 }
 
 export interface Measured {
@@ -63,10 +63,13 @@ export interface Measured {
 
 /**
  * Measure a day with both punches.
- * - flexible / fixed: only time inside [start, end] counts; arriving after
- *   latestStart is late and the rest of the shortage is early leave, so a late
- *   morning cannot be made up by staying after `end`.
- * - hours: the actual time from IN to OUT counts, with no lateness rules.
+ * - fixed: each person's day ends the required hours after they started, where the
+ *   start counts from `start` at the earliest and `latestStart` at the latest: on a
+ *   07:00-08:00 schedule with 7:15 required, 07:13 leaves at 14:28, 06:50 at 14:15
+ *   and 08:30 still at 15:15. Nothing before `start` or after that end counts, so
+ *   there is no extra time. Arriving after latestStart is late and the rest of the
+ *   shortage is early leave, so a late morning cannot be made up by staying later.
+ * - hours: the actual time from IN to OUT counts, overtime too, with no lateness rules.
  */
 export function measureDay(inTime: string, outTime: string, rule: DayRule): Measured | null {
   const inMin = hmToMin(inTime);
@@ -79,7 +82,8 @@ export function measureDay(inTime: string, outTime: string, rule: DayRule): Meas
     return { workedMin, diffMin: workedMin - rule.required, lateMin: 0, earlyMin: 0, shortfallMin };
   }
 
-  const workedMin = Math.max(0, Math.min(outMin, rule.end) - Math.max(inMin, rule.start));
+  const end = Math.min(Math.max(inMin, rule.start), rule.latestStart) + rule.required;
+  const workedMin = Math.max(0, Math.min(outMin, end) - Math.max(inMin, rule.start));
   const shortMin = Math.max(0, rule.required - workedMin);
   const lateMin = Math.min(shortMin, Math.max(0, inMin - rule.latestStart));
   return {

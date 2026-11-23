@@ -11,7 +11,7 @@ import { Dialog } from "../ui/Dialog.tsx";
 import { Field } from "../ui/Field.tsx";
 import { scheduleLines } from "./scheduleText.ts";
 
-const KINDS: ScheduleKind[] = ["flexible", "fixed", "hours"];
+const KINDS: ScheduleKind[] = ["fixed", "hours"];
 const DURATION = /^\d{1,2}:[0-5]\d$/;
 
 interface ScheduleDialogProps {
@@ -51,7 +51,7 @@ function ScheduleForm({ schedule, onClose, onSaved }: { schedule: Schedule | Omi
     setBusy(true);
     setError("");
     try {
-      const body = { ...draft, name: draft.name.trim(), latestStart: draft.kind === "flexible" ? draft.latestStart : draft.start };
+      const body = { ...draft, name: draft.name.trim(), latestStart: draft.kind === "fixed" ? draft.latestStart : draft.start };
       if ("id" in schedule) await api.updateSchedule(schedule.id, body);
       else await api.createSchedule(body);
       onSaved();
@@ -77,7 +77,7 @@ function ScheduleForm({ schedule, onClose, onSaved }: { schedule: Schedule | Omi
 
       <fieldset>
         <legend className="mb-2 text-sm font-medium text-slate-700">{t("schedule.kind")}</legend>
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2">
           {KINDS.map((kind) => (
             <label
               key={kind}
@@ -100,7 +100,7 @@ function ScheduleForm({ schedule, onClose, onSaved }: { schedule: Schedule | Omi
         <Field label={t("schedule.start")}>
           <input type="time" className="input" value={draft.start} onChange={(e) => e.target.value && setDraft({ ...draft, start: e.target.value })} />
         </Field>
-        {draft.kind === "flexible" ? (
+        {draft.kind === "fixed" ? (
           <Field label={t("schedule.latestStart")}>
             <input type="time" className="input" value={draft.latestStart} onChange={(e) => e.target.value && setDraft({ ...draft, latestStart: e.target.value })} />
           </Field>
